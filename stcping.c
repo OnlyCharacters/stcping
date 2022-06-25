@@ -112,7 +112,7 @@ count(double* delay)
     if (ping_times == 0)
         minimum = avg = *delay;
     else
-        avg = (avg + *delay) / successful_times;
+        avg = (avg + *delay) / 2;
 
     ping_times++;
     if (*delay < minimum)
