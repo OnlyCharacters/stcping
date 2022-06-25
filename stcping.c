@@ -130,7 +130,7 @@ print_statistics()
     fprintf(stderr, "\t%lu successful, %lu failed. (%.2f%% fail)\n",
             successful_times, ping_times - successful_times,
             ((float)(ping_times - successful_times) / ping_times) * 100);
-    fprintf(stderr, "\tMinimum = %.2fms, Maximum = %.2fms, Average = %.2fms\n",
+    fprintf(stderr, "\tMinimum = %.2fms, Maximum = %.2fms, Average = %.2fms\n\n",
             minimum, maximum, avg);
 
     freeaddrinfo(res);
