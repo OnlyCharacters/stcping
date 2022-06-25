@@ -39,8 +39,28 @@
 /*
     close()
 */
+#include <sys/types.h>
+/*
+    uint64_t
+*/
+#include <signal.h>
+/*
+    signal()
+*/
 
 #define THOUSAND 1000U
+
+uint64_t ping_times         = 0;
+uint64_t successful_times   = 0;
+
+double avg             = 0;
+double minimum         = 0;
+double maximum         = 0;
+
+int     port                = 80;
+char    destination[INET6_ADDRSTRLEN];
+
+struct addrinfo* res;
 
 struct addrinfo*
 get_resolve_list(char* domain, int version_flag)
@@ -85,12 +105,45 @@ set_non_block(int sockfd)
 	return 0;
 }
 
+void
+count(double* delay)
+{
+    successful_times++;
+    if (ping_times == 0)
+        minimum = avg = *delay;
+    else
+        avg = (avg + *delay) / successful_times;
+
+    ping_times++;
+    if (*delay < minimum)
+        minimum = *delay;
+    else if (*delay > maximum)
+        maximum = *delay;
+
+}
+
+void
+print_statistics()
+{
+    fprintf(stderr, "\nPing statistics for %s:%d\n", destination, port);
+    fprintf(stderr, "\t%lu sent.\n", ping_times);
+    fprintf(stderr, "\t%lu successful, %lu failed. (%.2f%% fail)\n",
+            successful_times, ping_times - successful_times,
+            ((float)(ping_times - successful_times) / ping_times) * 100);
+    fprintf(stderr, "\tMinimum = %.2fms, Maximum = %.2fms, Average = %.2fms\n",
+            minimum, maximum, avg);
+
+    freeaddrinfo(res);
+    exit(0);
+}
+
 int
 tcping6(struct sockaddr* servaddr)
 {
     int                 n;
     int                 error;
     int                 sockfd;
+    double              delay;
     char                addr[INET6_ADDRSTRLEN];
     socklen_t           len;
     fd_set              rset;
@@ -140,8 +193,10 @@ tcping6(struct sockaddr* servaddr)
             close(sockfd);
             return 1;
         }
-        fprintf(stderr, "response from %s:%d %ld ms\n", inet_ntop(AF_INET6, &servaddr_in6->sin6_addr, addr, INET6_ADDRSTRLEN),
-                ntohs(servaddr_in6->sin6_port), THOUSAND * (after.tv_sec - before.tv_sec) + (after.tv_usec - before.tv_usec));
+        delay = THOUSAND * (after.tv_sec - before.tv_sec) + (float)(after.tv_usec - before.tv_usec) / THOUSAND;
+        fprintf(stderr, "response from %s:%d %.2f ms\n", inet_ntop(AF_INET6, &servaddr_in6->sin6_addr, addr, INET6_ADDRSTRLEN),
+                ntohs(servaddr_in6->sin6_port), delay);
+        count(&delay);
     }
     // not yet connect
     else {
@@ -150,12 +205,14 @@ tcping6(struct sockaddr* servaddr)
             close(sockfd);
             if (gettimeofday(&after, NULL)) {
                 perror("tcping6.gettimeofday(&after, NULL)");
-                fprintf(stderr, "Timeout %ld ms\n", THOUSAND * timeout.tv_sec);
+                fprintf(stderr, "Timeout %.2ld ms\n", THOUSAND * timeout.tv_sec);
+                ping_times++;
                 return 1;
             }
-            fprintf(stderr, "Timeout %ld ms\n", THOUSAND * (after.tv_sec - before.tv_sec)
-                    + (after.tv_usec - before.tv_usec));
-            return 1;
+            fprintf(stderr, "Timeout %.2f ms\n", (THOUSAND * (after.tv_sec - before.tv_sec)
+                    + (float)(after.tv_usec - before.tv_usec) / THOUSAND));
+            ping_times++;
+            return 0;
         }
         // connect or error
         if (FD_ISSET(sockfd, &rset) || FD_ISSET(sockfd, &wset)) {
@@ -163,6 +220,7 @@ tcping6(struct sockaddr* servaddr)
             if (gettimeofday(&after, NULL)) {
                 perror("tcping4.gettimeofday(&after, NULL)");
                 close(sockfd);
+                ping_times++;
                 return 1;
             }
 
@@ -171,6 +229,7 @@ tcping6(struct sockaddr* servaddr)
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
                 perror("tcping6.getsockopt()");
                 close(sockfd);
+                ping_times++;
                 return 1;
             }
 
@@ -178,28 +237,32 @@ tcping6(struct sockaddr* servaddr)
             if (error) {
                 fprintf(stderr, "error %s\n", strerror(error));
                 close(sockfd);
+                ping_times++;
+                return 1;
             }
             // no error, connect successfully
             else {
                 if (gettimeofday(&after, NULL)) {
                     perror("tcping6.gettimeofday(&after, NULL)");
                     close(sockfd);
+                    ping_times++;
                     return 1;
                 }
-
+                delay = THOUSAND * (after.tv_sec - before.tv_sec) + (float)(after.tv_usec - before.tv_usec) / THOUSAND;
                 fprintf(stderr, "response from %s:%d %.2f ms\n", inet_ntop(AF_INET6, &servaddr_in6->sin6_addr, addr, INET6_ADDRSTRLEN),
-                        ntohs(servaddr_in6->sin6_port), THOUSAND * (after.tv_sec - before.tv_sec) + (float)(after.tv_usec - before.tv_usec) / THOUSAND);
+                        ntohs(servaddr_in6->sin6_port), delay);
+                count(&delay);
             }
         }
         else {
             fprintf(stderr, "unknow error\n");
             close(sockfd);
+            ping_times++;
             return 1;
         }
     }
     return 0;
 }
-
 
 int
 tcping4(struct sockaddr* servaddr)
@@ -207,6 +270,7 @@ tcping4(struct sockaddr* servaddr)
     int                 n;
     int                 error;
     int                 sockfd;
+    double              delay;
     char                addr[INET_ADDRSTRLEN];
     socklen_t           len;
     fd_set              rset;
@@ -254,10 +318,13 @@ tcping4(struct sockaddr* servaddr)
         if (gettimeofday(&after, NULL)) {
             perror("tcping4.gettimeofday(&after, NULL)");
             close(sockfd);
+            ping_times++;
             return 1;
         }
-        fprintf(stderr, "response from %s:%d %ld ms\n", inet_ntop(AF_INET, &servaddr_in->sin_addr, addr, INET_ADDRSTRLEN),
-                ntohs(servaddr_in->sin_port), THOUSAND * (after.tv_sec - before.tv_sec) + (after.tv_usec - before.tv_usec));
+        delay = THOUSAND * (after.tv_sec - before.tv_sec) + (float)(after.tv_usec - before.tv_usec) / THOUSAND;
+        fprintf(stderr, "response from %s:%d %.2f ms\n", inet_ntop(AF_INET, &servaddr_in->sin_addr, addr, INET_ADDRSTRLEN),
+                ntohs(servaddr_in->sin_port), delay);
+        count(&delay);
     }
     // not yet connect
     else {
@@ -267,11 +334,13 @@ tcping4(struct sockaddr* servaddr)
             if (gettimeofday(&after, NULL)) {
                 perror("tcping4.gettimeofday(&after, NULL)");
                 fprintf(stderr, "Timeout %ld ms\n", THOUSAND * timeout.tv_sec);
+                ping_times++;
                 return 1;
             }
-            fprintf(stderr, "Timeout %ld ms\n", THOUSAND * (after.tv_sec - before.tv_sec)
-                    + (after.tv_usec - before.tv_usec));
-            return 1;
+            fprintf(stderr, "Timeout %.2f ms\n", THOUSAND * (after.tv_sec - before.tv_sec)
+                    + (float)(after.tv_usec - before.tv_usec) / THOUSAND);
+            ping_times++;
+            return 0;
         }
         // connect or error
         if (FD_ISSET(sockfd, &rset) || FD_ISSET(sockfd, &wset)) {
@@ -279,6 +348,7 @@ tcping4(struct sockaddr* servaddr)
             if (gettimeofday(&after, NULL)) {
                 perror("tcping4.gettimeofday(&after, NULL)");
                 close(sockfd);
+                ping_times++;
                 return 1;
             }
 
@@ -287,6 +357,7 @@ tcping4(struct sockaddr* servaddr)
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
                 perror("tcping4.getsockopt()");
                 close(sockfd);
+                ping_times++;
                 return 1;
             }
 
@@ -294,22 +365,27 @@ tcping4(struct sockaddr* servaddr)
             if (error) {
                 fprintf(stderr, "error %s\n", strerror(error));
                 close(sockfd);
+                ping_times++;
+                return 1;
             }
             // no error, connect successfully
             else {
                 if (gettimeofday(&after, NULL)) {
                     perror("tcping4.gettimeofday(&after, NULL)");
                     close(sockfd);
+                    ping_times++;
                     return 1;
                 }
-
+                delay = THOUSAND * (after.tv_sec - before.tv_sec) + (float)(after.tv_usec - before.tv_usec) / THOUSAND;
                 fprintf(stderr, "response from %s:%d %.2f ms\n", inet_ntop(AF_INET, &servaddr_in->sin_addr, addr, INET_ADDRSTRLEN),
-                        ntohs(servaddr_in->sin_port), THOUSAND * (after.tv_sec - before.tv_sec) + (float)(after.tv_usec - before.tv_usec) / THOUSAND);
+                        ntohs(servaddr_in->sin_port), delay);
+                count(&delay);
             }
         }
         else {
             fprintf(stderr, "unknow error\n");
             close(sockfd);
+            ping_times++;
             return 1;
         }
     }
@@ -324,16 +400,27 @@ prepare_tcping(struct addrinfo* item, int port)
 
     memset(&sinaddr, 0, sizeof(struct sockaddr_in));
     memset(&sinaddr6, 0, sizeof(struct sockaddr_in6));
+    memset(&destination, 0, INET6_ADDRSTRLEN);
+
+    signal(SIGINT, print_statistics);
 
     if (item->ai_family == AF_INET) {
         memcpy(&sinaddr, item->ai_addr, sizeof(struct sockaddr_in));
         sinaddr.sin_port = htons(port);
-        return tcping4((struct sockaddr*)&sinaddr);
+        inet_ntop(AF_INET, &sinaddr.sin_addr, destination, INET_ADDRSTRLEN);
+        for ( ; ; ) {
+            tcping4((struct sockaddr*)&sinaddr);
+            sleep(2);
+        }
     }
     else if (item->ai_family == AF_INET6) {
         memcpy(&sinaddr6, item->ai_addr, sizeof(struct sockaddr_in6));
         sinaddr6.sin6_port = htons(port);
-        return tcping6((struct sockaddr*)&sinaddr6);
+        inet_ntop(AF_INET6, &sinaddr6.sin6_addr, destination, INET6_ADDRSTRLEN);
+        for ( ; ; ) {
+            tcping6((struct sockaddr*)&sinaddr6);
+            sleep(2);
+        }
     }
 
     return 1;
@@ -342,10 +429,8 @@ prepare_tcping(struct addrinfo* item, int port)
 int
 main(int argc, char** argv)
 {
-    int port;
     int af_family;
     struct addrinfo* p;
-    struct addrinfo* res;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s {domain} [port] [4/6]\n", argv[0]);
@@ -354,8 +439,6 @@ main(int argc, char** argv)
 
     if (argv[2] != NULL)
         port = atoi(argv[2]);
-    else
-        port = 80;
 
     if (argv[3] != NULL) {
         af_family = atoi(argv[3]);
@@ -372,11 +455,8 @@ main(int argc, char** argv)
         return 1;
     }
 
-    for (p = res; p != NULL; p = p->ai_next) {
-
-        while (prepare_tcping(p, port) == 0)
-            sleep(2);
-    }
+    p = res;
+    prepare_tcping(p, port);
 
     freeaddrinfo(res);
     return 0;
