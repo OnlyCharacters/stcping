@@ -182,15 +182,16 @@ tcping6(struct sockaddr* servaddr)
     if ((n = connect(sockfd, servaddr, sizeof(struct sockaddr_in6))) < 0) {
         if (errno != EINPROGRESS) {
             perror("connect");
+            close(sockfd);
             return 1;
         }
     }
 
     // connect immediately
     if (n == 0) {
+        close(sockfd);
         if (gettimeofday(&after, NULL)) {
             perror("tcping6.gettimeofday(&after, NULL)");
-            close(sockfd);
             return 1;
         }
         delay = THOUSAND * (after.tv_sec - before.tv_sec) + (float)(after.tv_usec - before.tv_usec) / THOUSAND;
@@ -216,10 +217,10 @@ tcping6(struct sockaddr* servaddr)
         }
         // connect or error
         if (FD_ISSET(sockfd, &rset) || FD_ISSET(sockfd, &wset)) {
+            close(sockfd);
             // get time first
             if (gettimeofday(&after, NULL)) {
                 perror("tcping4.gettimeofday(&after, NULL)");
-                close(sockfd);
                 ping_times++;
                 return 1;
             }
@@ -228,7 +229,6 @@ tcping6(struct sockaddr* servaddr)
             len = sizeof(int);
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
                 perror("tcping6.getsockopt()");
-                close(sockfd);
                 ping_times++;
                 return 1;
             }
@@ -236,7 +236,6 @@ tcping6(struct sockaddr* servaddr)
             // error occurs
             if (error) {
                 fprintf(stderr, "error %s\n", strerror(error));
-                close(sockfd);
                 ping_times++;
                 return 1;
             }
@@ -244,7 +243,6 @@ tcping6(struct sockaddr* servaddr)
             else {
                 if (gettimeofday(&after, NULL)) {
                     perror("tcping6.gettimeofday(&after, NULL)");
-                    close(sockfd);
                     ping_times++;
                     return 1;
                 }
@@ -255,8 +253,8 @@ tcping6(struct sockaddr* servaddr)
             }
         }
         else {
-            fprintf(stderr, "unknow error\n");
             close(sockfd);
+            fprintf(stderr, "unknow error\n");
             ping_times++;
             return 1;
         }
@@ -309,15 +307,16 @@ tcping4(struct sockaddr* servaddr)
     if ((n = connect(sockfd, servaddr, sizeof(struct sockaddr))) < 0) {
         if (errno != EINPROGRESS) {
             perror("connect");
+            close(sockfd);
             return 1;
         }
     }
 
     // connect immediately
     if (n == 0) {
+        close(sockfd);
         if (gettimeofday(&after, NULL)) {
             perror("tcping4.gettimeofday(&after, NULL)");
-            close(sockfd);
             ping_times++;
             return 1;
         }
@@ -344,10 +343,10 @@ tcping4(struct sockaddr* servaddr)
         }
         // connect or error
         if (FD_ISSET(sockfd, &rset) || FD_ISSET(sockfd, &wset)) {
+            close(sockfd);
             // get time first
             if (gettimeofday(&after, NULL)) {
                 perror("tcping4.gettimeofday(&after, NULL)");
-                close(sockfd);
                 ping_times++;
                 return 1;
             }
@@ -356,7 +355,6 @@ tcping4(struct sockaddr* servaddr)
             len = sizeof(int);
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
                 perror("tcping4.getsockopt()");
-                close(sockfd);
                 ping_times++;
                 return 1;
             }
@@ -364,7 +362,6 @@ tcping4(struct sockaddr* servaddr)
             // error occurs
             if (error) {
                 fprintf(stderr, "error %s\n", strerror(error));
-                close(sockfd);
                 ping_times++;
                 return 1;
             }
@@ -372,7 +369,6 @@ tcping4(struct sockaddr* servaddr)
             else {
                 if (gettimeofday(&after, NULL)) {
                     perror("tcping4.gettimeofday(&after, NULL)");
-                    close(sockfd);
                     ping_times++;
                     return 1;
                 }
@@ -383,8 +379,8 @@ tcping4(struct sockaddr* servaddr)
             }
         }
         else {
-            fprintf(stderr, "unknow error\n");
             close(sockfd);
+            fprintf(stderr, "unknow error\n");
             ping_times++;
             return 1;
         }
