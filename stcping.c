@@ -217,9 +217,9 @@ tcping6(struct sockaddr* servaddr)
         }
         // connect or error
         if (FD_ISSET(sockfd, &rset) || FD_ISSET(sockfd, &wset)) {
-            close(sockfd);
             // get time first
             if (gettimeofday(&after, NULL)) {
+                close(sockfd);
                 perror("tcping4.gettimeofday(&after, NULL)");
                 ping_times++;
                 return 1;
@@ -228,6 +228,7 @@ tcping6(struct sockaddr* servaddr)
             // check if error occurs
             len = sizeof(int);
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
+                close(sockfd);
                 perror("tcping6.getsockopt()");
                 ping_times++;
                 return 1;
@@ -235,12 +236,14 @@ tcping6(struct sockaddr* servaddr)
 
             // error occurs
             if (error) {
+                close(sockfd);
                 fprintf(stderr, "error %s\n", strerror(error));
                 ping_times++;
                 return 1;
             }
             // no error, connect successfully
             else {
+                close(sockfd);
                 if (gettimeofday(&after, NULL)) {
                     perror("tcping6.gettimeofday(&after, NULL)");
                     ping_times++;
@@ -343,9 +346,9 @@ tcping4(struct sockaddr* servaddr)
         }
         // connect or error
         if (FD_ISSET(sockfd, &rset) || FD_ISSET(sockfd, &wset)) {
-            close(sockfd);
             // get time first
             if (gettimeofday(&after, NULL)) {
+                close(sockfd);
                 perror("tcping4.gettimeofday(&after, NULL)");
                 ping_times++;
                 return 1;
@@ -354,6 +357,7 @@ tcping4(struct sockaddr* servaddr)
             // check if error occurs
             len = sizeof(int);
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
+                close(sockfd);
                 perror("tcping4.getsockopt()");
                 ping_times++;
                 return 1;
@@ -361,12 +365,14 @@ tcping4(struct sockaddr* servaddr)
 
             // error occurs
             if (error) {
+                close(sockfd);
                 fprintf(stderr, "error %s\n", strerror(error));
                 ping_times++;
                 return 1;
             }
             // no error, connect successfully
             else {
+                close(sockfd);
                 if (gettimeofday(&after, NULL)) {
                     perror("tcping4.gettimeofday(&after, NULL)");
                     ping_times++;
