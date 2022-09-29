@@ -37,6 +37,7 @@
 */
 #include <unistd.h>
 /*
+    getopt()
     close()
 */
 #include <sys/types.h>
@@ -58,6 +59,7 @@ double minimum         = 0;
 double maximum         = 0;
 
 int     port                = 80;
+int     stop_times          = -1;
 char    destination[INET6_ADDRSTRLEN];
 
 struct addrinfo* res;
@@ -127,8 +129,12 @@ print_statistics()
 {
     fprintf(stderr, "\nPing statistics for %s:%d\n", destination, port);
     fprintf(stderr, "\t%lu sent.\n", ping_times);
-    fprintf(stderr, "\t%lu successful, %lu failed. (%.2f%% fail)\n",
-            successful_times, ping_times - successful_times,
+    // fprintf(stderr, "\t%lu successful, %lu failed. (%.2f%% fail)\n",
+    //         successful_times, ping_times - successful_times,
+    //         ((float)(ping_times - successful_times) / ping_times) * 100);
+    fprintf(stderr, "\t%lu successful, %lu failed.\n",
+            successful_times, ping_times - successful_times);
+    fprintf(stderr, "\t%.2f%% fail.\n",
             ((float)(ping_times - successful_times) / ping_times) * 100);
     fprintf(stderr, "\tMinimum = %.2fms, Maximum = %.2fms, Average = %.2fms\n\n",
             minimum, maximum, avg);
@@ -217,10 +223,10 @@ tcping6(struct sockaddr* servaddr)
         }
         // connect or error
         if (FD_ISSET(sockfd, &rset) || FD_ISSET(sockfd, &wset)) {
-            close(sockfd);
             // get time first
             if (gettimeofday(&after, NULL)) {
-                perror("tcping4.gettimeofday(&after, NULL)");
+                close(sockfd);
+                perror("tcping6.gettimeofday(&after, NULL)");
                 ping_times++;
                 return 1;
             }
@@ -228,6 +234,7 @@ tcping6(struct sockaddr* servaddr)
             // check if error occurs
             len = sizeof(int);
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
+                close(sockfd);
                 perror("tcping6.getsockopt()");
                 ping_times++;
                 return 1;
@@ -235,12 +242,14 @@ tcping6(struct sockaddr* servaddr)
 
             // error occurs
             if (error) {
+                close(sockfd);
                 fprintf(stderr, "error %s\n", strerror(error));
                 ping_times++;
                 return 1;
             }
             // no error, connect successfully
             else {
+                close(sockfd);
                 if (gettimeofday(&after, NULL)) {
                     perror("tcping6.gettimeofday(&after, NULL)");
                     ping_times++;
@@ -343,9 +352,9 @@ tcping4(struct sockaddr* servaddr)
         }
         // connect or error
         if (FD_ISSET(sockfd, &rset) || FD_ISSET(sockfd, &wset)) {
-            close(sockfd);
             // get time first
             if (gettimeofday(&after, NULL)) {
+                close(sockfd);
                 perror("tcping4.gettimeofday(&after, NULL)");
                 ping_times++;
                 return 1;
@@ -354,6 +363,7 @@ tcping4(struct sockaddr* servaddr)
             // check if error occurs
             len = sizeof(int);
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) < 0) {
+                close(sockfd);
                 perror("tcping4.getsockopt()");
                 ping_times++;
                 return 1;
@@ -361,12 +371,14 @@ tcping4(struct sockaddr* servaddr)
 
             // error occurs
             if (error) {
+                close(sockfd);
                 fprintf(stderr, "error %s\n", strerror(error));
                 ping_times++;
                 return 1;
             }
             // no error, connect successfully
             else {
+                close(sockfd);
                 if (gettimeofday(&after, NULL)) {
                     perror("tcping4.gettimeofday(&after, NULL)");
                     ping_times++;
@@ -404,52 +416,99 @@ prepare_tcping(struct addrinfo* item, int port)
         memcpy(&sinaddr, item->ai_addr, sizeof(struct sockaddr_in));
         sinaddr.sin_port = htons(port);
         inet_ntop(AF_INET, &sinaddr.sin_addr, destination, INET_ADDRSTRLEN);
-        for ( ; ; ) {
-            tcping4((struct sockaddr*)&sinaddr);
-            sleep(2);
+        if (stop_times == -1) {
+            for ( ; ; ) {
+                tcping4((struct sockaddr*)&sinaddr);
+                sleep(2);
+            }
+        }
+        else {
+            for (int i = 0; i < stop_times; i++) {
+                tcping4((struct sockaddr*)&sinaddr);
+                if (i < stop_times - 1)
+                    sleep(2);
+            }
+            print_statistics();
         }
     }
     else if (item->ai_family == AF_INET6) {
         memcpy(&sinaddr6, item->ai_addr, sizeof(struct sockaddr_in6));
         sinaddr6.sin6_port = htons(port);
         inet_ntop(AF_INET6, &sinaddr6.sin6_addr, destination, INET6_ADDRSTRLEN);
-        for ( ; ; ) {
-            tcping6((struct sockaddr*)&sinaddr6);
-            sleep(2);
+        if (stop_times == -1) {
+            for ( ; ; ) {
+                tcping6((struct sockaddr*)&sinaddr6);
+                sleep(2);
+            }
+        }
+        else {
+            for (int i = 0; i < stop_times; i++) {
+                tcping6((struct sockaddr*)&sinaddr6);
+                if (i < stop_times - 1)
+                    sleep(2);
+            }
+            print_statistics();
         }
     }
 
     return 1;
 }
 
+void
+print_help()
+{
+    fprintf(stderr, "\nUsage\n  stcping [options] IP/Domain Port\n");
+    fprintf(stderr, "\nOptions:\n");
+    fprintf(stderr, "  -c <count>\tstop after <count> replies\n");
+    fprintf(stderr, "  -4\t\tuse IPv4\n");
+    fprintf(stderr, "  -6\t\tuse IPv6\n");
+    fprintf(stderr, "  -h\t\tprint help and exit\n\n");
+}
+
 int
 main(int argc, char** argv)
 {
-    int af_family;
+    int opt;
+    int af_family = 0;
     struct addrinfo* p;
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s {domain} [port] [4/6]\n", argv[0]);
+        print_help(argv[0]);
         return 1;
     }
 
-    if (argv[2] != NULL)
-        port = atoi(argv[2]);
-
-    if (argv[3] != NULL) {
-        af_family = atoi(argv[3]);
-        if (af_family == 4)
-            res = get_resolve_list(argv[1], AF_INET);
-        else if (af_family == 6)
-            res = get_resolve_list(argv[1], AF_INET6);
-        else
-            res = get_resolve_list(argv[1], AF_UNSPEC);
+    while ((opt = getopt(argc, argv, "c:46h")) != -1) {
+        switch (opt)
+        {
+        case 'c':
+            if ((stop_times = atol(optarg)) > 0)
+                ;
+            else
+                stop_times = -1;
+            break;
+        case '4':
+            af_family = 4;
+            break;
+        case '6':
+            af_family = 6;
+            break;
+        case 'h':
+            print_help();
+            return 0;
+        default:
+            break;
+        }
     }
+
+    if (argv[optind + 1] != NULL)
+        port = atoi(argv[optind + 1]);
+
+    if (af_family == 4)
+        res = get_resolve_list(argv[optind], AF_INET);
+    else if (af_family == 6)
+        res = get_resolve_list(argv[optind], AF_INET6);
     else
-        res = get_resolve_list(argv[1], AF_UNSPEC);
-    if (res == NULL) {
-        return 1;
-    }
+        res = get_resolve_list(argv[optind], AF_UNSPEC);
 
     p = res;
     prepare_tcping(p, port);
