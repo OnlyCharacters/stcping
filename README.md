@@ -4,12 +4,17 @@ A tcping tool for linux based on select
 
 
 Usage
+
   stcping [options] IP/Domain Port
 
 Options:
+
   -c <count>	stop after <count> replies
+
   -4		use IPv4
+
   -6		use IPv6
+
   -h		print help and exit
 
 
